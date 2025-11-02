@@ -1,19 +1,27 @@
 import requests
 from fastapi import APIRouter, Depends, HTTPException, status, Path
+from sqlalchemy import create_engine, select
+from sqlmodel import Session
 from dependencies import verify_token, get_username, verify_receiver
+from models.Transaction import Transactions_DTO
 from models.input_models import NewTransactionInput
 from typing import Annotated
-from repository import config
+from repository import Cust_Repo, config
 import json
+from repository.config import DATABASE_URL
+
 
 router = APIRouter(
     prefix='/transactions',
     tags=['Transactions'],
-    dependencies=[Depends(verify_token)]
+    # dependencies=[Depends(verify_token)]
+   
 )
 
-@router.post('/create', description='Create a new transaction')
-async def create_new_transaction(input : NewTransactionInput, username : Annotated[str, Depends(get_username)]):
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, echo=False)
+
+@router.post('/create', description='Create a new transaction',)
+async def create_new_transaction(input : NewTransactionInput, username : Annotated[str, Depends(get_username)],dependencies=[Depends(verify_token)]):
     # verify receiver
     verify_receiver(input.receiver_id)
 
@@ -50,15 +58,87 @@ async def create_new_transaction(input : NewTransactionInput, username : Annotat
     r = response.json()
     transaction_id = r['transaction_id']
 
-    # temporary
-    return r
+    
 
     # TODO : send transaction id to otp service
+    otp_resp = requests.post(
+        f"{config.OTP_URL}/otp/generate",
+        json={"transaction_id": transaction_id},
+        timeout=20
+    )
 
-    # TODO : make requests to email service
+    if otp_resp.status_code != 200:
+        return {
+            "success": True,
+            "message": "Transaction created. OTP failed — use /otp/resend",
+            "transaction_id": transaction_id,
+            "error": otp_resp.text
+        }
+
+    otp_json = otp_resp.json()
+    otp_code = otp_json["data"]["otp_code"]  
+    expires_in = otp_json["data"]["expires_in_seconds"]
+
+    
+    with Session(engine) as session:
+        trans = session.get(Transactions_DTO, transaction_id)
+        payer = Cust_Repo.get_cust_info_by_cust_id(trans.payer_id)
+        customer_email = payer.email or "test@example.com"
+        customer_name = payer.full_name or "Customer"
+
+    #TODO : send request to email service
+    email_payload = {
+        "transaction_id": transaction_id,
+        "email": customer_email,
+        "otp_code": otp_code,
+        "customer_name": customer_name
+    }
+
+    try:
+        email_resp = requests.post(
+            f"{config.EMAIL_URL}/send-otp",
+            json=email_payload,
+            timeout=10
+        )
+        email_sent = email_resp.status_code == 200
+    except:
+        email_sent = False
+
+    
+    return {
+        "success": True,
+        "message": "Transaction created & OTP sent to your EMAIL!",
+        "transaction_id": transaction_id,
+        "otp_sent_to": customer_email,
+        "expires_in_seconds": expires_in,
+        "email_status": "sent" if email_sent else "failed (check terminal)",
+        
+    }
 
 @router.get('/me')
-async def get_all_transactions(username : Annotated[str , Depends(get_username)]):
+async def get_all_transactions(username : Annotated[str , Depends(get_username)],dependencies=[Depends(verify_token)]):
     url = config.BANKING_URL + '/banking/transactions/all/' + username
     response = requests.get(url=url)
     return response.json()
+
+
+@router.get("/{transaction_id}")
+async def get_transaction_for_otp(transaction_id: int = Path(..., ge=1)):
+    with Session(engine) as session:
+        trans = session.get(Transactions_DTO, transaction_id)
+        if not trans:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
+        payer = Cust_Repo.get_cust_info_by_cust_id(trans.payer_id) or type("obj", (), {"email": "", "full_name": ""})()
+
+        return {
+            "transaction_id": transaction_id,
+            "customer_email": payer.email,
+            "customer_name": payer.full_name,
+            "payer_id": trans.payer_id,
+            "receiver_id": trans.receiver_id,
+            "debt_id": trans.debt_id,
+            "amount": trans.amount,
+            "status": trans.status 
+        }
+    
