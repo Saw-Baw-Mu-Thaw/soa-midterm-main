@@ -79,12 +79,10 @@ async def create_new_transaction(input : NewTransactionInput, username : Annotat
     otp_code = otp_json["data"]["otp_code"]  
     expires_in = otp_json["data"]["expires_in_seconds"]
 
-    
-    with Session(engine) as session:
-        trans = session.get(Transactions_DTO, transaction_id)
-        payer = Cust_Repo.get_cust_info_by_cust_id(trans.payer_id)
-        customer_email = payer.email or "test@example.com"
-        customer_name = payer.full_name or "Customer"
+
+    payer = Cust_Repo.get_cust_info_by_username(username)
+    customer_email = payer.email or "test@example.com"
+    customer_name = payer.full_name or "Customer"
 
     #TODO : send request to email service
     email_payload = {
@@ -117,7 +115,7 @@ async def create_new_transaction(input : NewTransactionInput, username : Annotat
 
 @router.get('/me')
 async def get_all_transactions(username : Annotated[str , Depends(get_username)],dependencies=[Depends(verify_token)]):
-    url = config.BANKING_URL + '/banking/transactions/all/' + username
+    url = config.BANKING_URL + 'banking/transactions/all/' + username
     response = requests.get(url=url)
     return response.json()
 
