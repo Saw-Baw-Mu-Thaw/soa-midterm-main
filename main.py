@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from dependencies import convert_to_customer
 from models.Customer import Customer
 from repository import Cust_Repo
-from routers import customers, transactions
+from routers import customers, transactions, otp
+from fastapi.middleware.cors import CORSMiddleware
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 
@@ -66,8 +67,17 @@ async def get_current_active_user(token : Annotated[str, Depends(oauth2_scheme)]
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
+
 app.include_router(customers.router)
 app.include_router(transactions.router)
+app.include_router(otp.router)
 
 @app.post('/token', response_model=Token, tags=['Login'])
 async def login_for_access_token(form_data : Annotated[OAuth2PasswordRequestForm, Depends()]):
