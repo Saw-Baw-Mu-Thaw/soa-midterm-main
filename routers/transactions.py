@@ -6,7 +6,7 @@ from dependencies import verify_token, get_username, verify_receiver
 from models.Transaction import Transactions_DTO
 from models.input_models import NewTransactionInput
 from typing import Annotated
-from repository import Cust_Repo, config
+from repository import config, Cust_Repo
 import json
 from repository.config import DATABASE_URL
 
@@ -44,7 +44,7 @@ async def create_new_transaction(input : NewTransactionInput, username : Annotat
     
     
     # then create new transaction
-    url = config.BANKING_URL + '/banking/transaction/create'
+    url = config.BANKING_URL + 'banking/transaction/create'
     data = {
         'payer_id' : input.payer_id,
         'receiver_id' : input.receiver_id.upper(),
@@ -58,11 +58,9 @@ async def create_new_transaction(input : NewTransactionInput, username : Annotat
     r = response.json()
     transaction_id = r['transaction_id']
 
-    
-
     # TODO : send transaction id to otp service
     otp_resp = requests.post(
-        f"{config.OTP_URL}/otp/generate",
+        f"{config.OTP_URL}otp/generate",
         json={"transaction_id": transaction_id},
         timeout=20
     )
@@ -79,7 +77,6 @@ async def create_new_transaction(input : NewTransactionInput, username : Annotat
     otp_code = otp_json["data"]["otp_code"]  
     expires_in = otp_json["data"]["expires_in_seconds"]
 
-
     payer = Cust_Repo.get_cust_info_by_username(username)
     customer_email = payer.email or "test@example.com"
     customer_name = payer.full_name or "Customer"
@@ -94,7 +91,7 @@ async def create_new_transaction(input : NewTransactionInput, username : Annotat
 
     try:
         email_resp = requests.post(
-            f"{config.EMAIL_URL}/send-otp",
+            f"{config.EMAIL_URL}send-otp",
             json=email_payload,
             timeout=10
         )
@@ -110,7 +107,6 @@ async def create_new_transaction(input : NewTransactionInput, username : Annotat
         "otp_sent_to": customer_email,
         "expires_in_seconds": expires_in,
         "email_status": "sent" if email_sent else "failed (check terminal)",
-        
     }
 
 @router.get('/me')
