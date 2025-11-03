@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path
 from dependencies import verify_token, get_username, verify_receiver
 from models.input_models import NewTransactionInput
 from typing import Annotated
-from repository import config
+from repository import config, Cust_Repo
 import json
 
 router = APIRouter(
@@ -50,18 +50,7 @@ async def create_new_transaction(input : NewTransactionInput, username : Annotat
     r = response.json()
     transaction_id = r['transaction_id']
 
-    # temporary
-    return r
-
     # TODO : send transaction id to otp service
-<<<<<<< Updated upstream
-
-    # TODO : make requests to email service
-
-@router.get('/me')
-async def get_all_transactions(username : Annotated[str , Depends(get_username)]):
-    url = config.BANKING_URL + '/banking/transactions/all/' + username
-=======
     otp_resp = requests.post(
         f"{config.OTP_URL}otp/generate",
         json={"transaction_id": transaction_id},
@@ -115,6 +104,5 @@ async def get_all_transactions(username : Annotated[str , Depends(get_username)]
 @router.get('/me')
 async def get_all_transactions(username : Annotated[str , Depends(get_username)],dependencies=[Depends(verify_token)]):
     url = config.BANKING_URL + 'banking/transactions/all/' + username
->>>>>>> Stashed changes
     response = requests.get(url=url)
     return response.json()

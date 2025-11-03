@@ -19,7 +19,7 @@ class OTPInput(BaseModel):
     otp : str = Field(min_length=6, max_length=6)
 
 @router.post('/verify')
-def verify_otp(input : OTPInput):
+def verify_otp(input : OTPInput, username : Annotated[str, Depends(get_username)]):
     url = config.OTP_URL + '/otp/verify'
     data = {'transaction_id' : input.transaction_id, 'otp_code' : input.otp}
     response = requests.post(url=url, data=json.dumps(data))
@@ -41,8 +41,27 @@ def verify_otp(input : OTPInput):
         )
     
     if response.status_code == 200:
-        # SEnd confirmation email
-        url = config.EMAIL_URL + 'confirm'
+        # Send confirmation email
+        cust = Cust_Repo.get_cust_info_by_username(username)
+
+        # complete the transaction
+        url = config.BANKING_URL + 'banking/transaction/complete/' + str(input.transaction_id)
+        r = requests.put(url=url)
+
+        if r.status_code == 200:
+            # send the completion email
+            url = config.EMAIL_URL + 'confirm'
+            data = {
+                'transaction_id' : input.transaction_id,
+                'email' : cust.email,
+                'customer_name' : cust.full_name
+            }
+            r = requests.post(url=url, data=json.dumps(data))
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='Incorrect Transaction ID'
+            )
 
 @router.get('/resend/{transaction_id}')
 def resend_otp(transaction_id : int, username : Annotated[str, Depends(get_username)]):
